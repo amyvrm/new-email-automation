@@ -1,0 +1,96 @@
+#!/usr/bin/env groovy
+
+node('aws&&docker')
+{
+    def upload_url = "https://jfrog.trendmicro.com/artifactory/dslabs-dsru-generic-test-local/"
+
+    stage('Setup')
+    {
+        checkout scm
+        dir('dsrusigning')
+        {
+            git branch: 'master', credentialsId: 'su-dslabs-automation-token',
+            url: 'https://git@dsgithub.trendmicro.com/dslabs/dsrusigning.git'
+        }
+        dir('sign_key')
+        {
+            git branch: 'master', credentialsId: 'su-dslabs-automation-token',
+            url: 'https://git@dsgithub.trendmicro.com/deep-security/aws_sign_key.git'
+        }
+        dir('newdsrusigning')
+        {
+            git branch: 'master', credentialsId: 'su-dslabs-automation-token',
+            url: "https://git@dsgithub.trendmicro.com/dslabs/vpru-ivpru-decryption-tool.git"
+        }
+    }
+
+    infra_image = docker.build("dsru-decrypt", "-f docker_files/DockerfileDecrypt .")
+    infra_image.inside
+    {
+        withCredentials([string(credentialsId: 'dsdeploy-artifactory-token',
+                                          variable: "JFROG_TOKEN")])
+        {
+            stage('Download Packages')
+            {
+                echo "Downloading files from JFrog"
+                sh "rm -rf update-packages"
+                sh "rm -rf ivp"
+                sh ("python src/jfrog_download.py --url $package_url --jfrog_token ${JFROG_TOKEN}")
+            }
+
+            stage('Decrypting Packages')
+            {
+                echo "Decrypting DSRU"
+                def dsru_filepaths = sh(script: "python src/find_package_filepaths.py -t DSRU", returnStdout: true).trim().split(",")
+                for (path in dsru_filepaths)
+                {
+                    sh "java -jar dsrusigning/DSRUCrypt.jar decrypt ${path}"
+                }
+                /*
+                Phasing out IDF/VP Package.
+                echo "Decrypting VP"
+                def vp_filepaths = sh(script: "python src/find_package_filepaths.py -t VP", returnStdout: true).trim().split(",")
+                for (path in vp_filepaths)
+                {
+                    sh "java -jar newdsrusigning/decrypt.jar decrypt ${path}"
+                }
+                echo "Decrypting IDF"
+                def idf_filepaths = sh(script: "python src/find_package_filepaths.py -t IDF", returnStdout: true).trim().split(",")
+                for (path in idf_filepaths)
+                {
+                    sh "java -jar newdsrusigning/decrypt.jar decrypt ${path}"
+                }
+                */
+                echo "Decrypting iVP"
+                def ivp_filepaths = sh(script: "python src/find_package_filepaths.py -t iVP", returnStdout: true).trim().split(",")
+                for (path in ivp_filepaths)
+                {
+                    ivp_name = path.split('/')[-1]
+                    sh "java -jar newdsrusigning/jar/DSRUDecrypter.jar ${path} ivp/${ivp_name}.decrypted"
+                }
+            }
+
+            stage('Parsing Packages')
+            {
+                sh 'python src/parse_update.py update-packages'
+                sh 'python src/parse_update_wo_zip.py ivp update-packages'
+            }
+
+            stage('Generate Att&ck_coverage')
+            {
+                sh 'python src/att_ck_coverage.py'
+            }
+
+            stage('JFrog Upload')
+            {
+                def packages = package_url.split(',')
+                echo "${packages}"
+                for (pkg in packages)
+                {
+                    echo "package version: [${pkg}]"
+                    sh ("python src/jfrog_upload.py --url $upload_url/$pkg/ --jfrog_token $JFROG_TOKEN")
+                }
+            }
+        }
+    }
+}

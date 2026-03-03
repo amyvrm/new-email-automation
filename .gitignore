@@ -1,0 +1,8 @@
+# Specify filepatterns you want git to ignore.
+
+.idea/
+*.html
+*.csv
+*.json
+*.txt
+*pycache*
