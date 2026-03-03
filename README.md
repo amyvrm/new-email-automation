@@ -1,5 +1,9 @@
 # Email Automation System
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
+
 Automated email generation system for security release notifications with JIRA integration, ATT&CK framework coverage analysis, and JFrog artifact management.
 
 ## Features
